@@ -3,22 +3,54 @@
 # Add steps that run tests, create a NuGet package, deploy, and more:
 # https://docs.microsoft.com/azure/devops/pipelines/languages/dotnet-core
 
-parameters:
+trigger:
+- 'main'
+
+pool:
+  vmImage: 'ubuntu-20.04'
+  demands:
+  - npm
+
+variables:
   buildConfiguration: 'Release'
+  wwwrootDir: 'Tailspin.SpaceGame.Web/wwwroot'
+  dotnetSdkVersion: '6.x'
 
 steps:
-- task: DotNetCoreCLI@2
-  displayName: 'Build the project - ${{ parameters.buildConfiguration }}'
+- task: UseDotNet@2
+  displayName: 'Use .NET SDK $(dotnetSdkVersion)'
   inputs:
-    command: 'build'
-    arguments: '--no-restore --configuration ${{ parameters.buildConfiguration }}'
-    projects: '**/*.csproj'
+    version: '$(dotnetSdkVersion)'
+
+- task: Npm@1
+  displayName: 'Run npm install'
+  inputs:
+    verbose: false
+
+- script: './node_modules/.bin/node-sass $(wwwrootDir) --output $(wwwrootDir)'
+  displayName: 'Compile Sass assets'
+
+- task: gulp@1
+  displayName: 'Run gulp tasks'
+
+- script: 'echo "$(Build.DefinitionName), $(Build.BuildId), $(Build.BuildNumber)" > buildinfo.txt'
+  displayName: 'Write build info'
+  workingDirectory: $(wwwrootDir)
 
 - task: DotNetCoreCLI@2
-  displayName: 'Publish the project - ${{ parameters.buildConfiguration }}'
+  displayName: 'Restore project dependencies'
   inputs:
-    command: 'publish'
+    command: 'restore'
     projects: '**/*.csproj'
-    publishWebProjects: false
-    arguments: '--no-build --configuration ${{ parameters.buildConfiguration }} --output $(Build.ArtifactStagingDirectory)/${{ parameters.buildConfiguration }}'
-    zipAfterPublish: true
+
+- template: templates/build.yml
+  parameters:
+    buildConfiguration: 'Debug'
+
+- template: templates/build.yml
+  parameters:
+    buildConfiguration: 'Release'
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact: drop'
+  condition: succeeded()
